@@ -5,244 +5,255 @@ Interactive, multithreaded photo culling for Linux with brightness and blur dete
 ## Features
 
 - Interactive GUI-based photo review.
-- Keyboard-driven manual culling.
-- Brightness, contrast, and sharpness analysis.
+- Normal maximized window on startup.
+- Optional fullscreen mode using `F11` or `F`.
+- EXIF-aware image rotation during preview.
+- Keyboard-driven culling.
+- Manual “interesting, keep” override for technically imperfect images.
+- Automatic brightness, contrast, and sharpness analysis.
 - Learn mode for deriving thresholds from manual ratings.
-- Automatic resume after an interrupted learn run.
-- Previously rated images are skipped by default.
-- Image analysis is performed only for images that still need rating.
-- Multithreaded batch processing in learn and execution modes.
+- Configurable random learning sample.
+- Multithreaded batch processing.
 - Face detection using OpenCV YuNet.
 - Face-region sharpness classification.
 - CSV reports containing calculated metrics.
-- Local processing without uploading photos.
-- Collision-safe file moving.
+- Default symbolic-link output mode.
+- Optional physical file moving with `--move`.
+- Local processing without uploading photos to an external service.
 
-## Installation
+## Manual ratings
 
-Linux Mint / Debian-based systems:
-
-```bash
-make install-system
-```
-
-For an isolated Python virtual environment:
-
-```bash
-make install
-```
-
-The virtual environment installs NumPy, Pillow, and `opencv-contrib-python`. Tkinter is normally provided by the system package `python3-tk`.
-
-Check the installation:
-
-```bash
-make check
-```
-
-## YuNet model
-
-```bash
-mkdir -p "$HOME/.local/share/photo-culler"
-wget -O "$HOME/.local/share/photo-culler/face_detection_yunet_2023mar.onnx" \
-  "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
-```
-
-## Learn mode and resume behavior
-
-Start the learn mode:
-
-```bash
-./foto_culler.py learn \
-  "$HOME/Fotos/00_original" \
-  "$HOME/Fotos/learn" \
-  --workers 8
-```
-
-The program first loads the existing state file:
-
-```text
-$HOME/Fotos/learn/labels.json
-```
-
-If it exists, every image already present in `labels.json` is skipped automatically. Only images without a stored rating are passed to the batch analyzer and then shown in the review GUI.
-
-This means that restarting the same command continues the previous review by default. You do not need a special resume option.
-
-The workflow is:
-
-1. Load `labels.json` if available.
-2. Find all images recursively.
-3. Remove already rated images from the pending list.
-4. If no pending images remain, finish without opening the review window.
-5. Run the keyboard test.
-6. Analyze only pending images in parallel.
-7. Review only pending images.
-8. Save the updated ratings.
-9. Analyze the complete collection once to calculate final thresholds.
-
-If you want to start over, delete the state file manually:
-
-```bash
-rm "$HOME/Fotos/learn/labels.json"
-```
-
-You may also remove the previous generated files before starting over:
-
-```bash
-rm -f \
-  "$HOME/Fotos/learn/labels.json" \
-  "$HOME/Fotos/learn/thresholds.json" \
-  "$HOME/Fotos/learn/learn-report.csv"
-```
-
-The image previews are not loaded or resized before the program knows which images still need rating. Previously rated images therefore do not trigger unnecessary analysis or review work.
-
-## Keyboard controls
-
-The keyboard test requests:
-
-- Space
-- Right Shift
-- Right Control
-
-During review:
+The learn mode uses the following controls:
 
 | Key | Action |
 |---|---|
-| Left arrow | Go back |
-| Right arrow | Go forward; unrated image becomes `ok` |
-| Up arrow | Rate `too_bright` and continue |
-| Down arrow | Rate `too_dark` and continue |
-| Space | Rate `blurry` and continue |
-| Right Shift | Rate `blurry` and continue |
-| Right Control | Rate `blurry` and continue |
-| Escape | Abort and save the current state |
+| Left arrow | Go back one image |
+| Right arrow | Go forward; unrated images become `ok` |
+| Up arrow | Mark as `zu_hell` and continue |
+| Down arrow | Mark as `zu_dunkel` and continue |
+| Space | Mark as `unscharf` and continue |
+| Right Shift | Mark as `unscharf` and continue |
+| Right Control | Mark as `unscharf` and continue |
+| `I` | Mark as technically imperfect but interesting |
+| `F11` or `F` | Toggle fullscreen |
+| Escape | Abort and save progress |
 
-Existing ratings are preserved when navigating backward. A new rating overwrites the previous rating.
+The `interessant` rating is an explicit manual override. It is intended for images that are technically imperfect but worth keeping because of their composition, moment, subject, emotion, or documentary value.
 
-## Generated files
+## Classification priority
+
+Manual interest overrides technical rejection:
 
 ```text
-learn/
+interessant
+    > zu_dunkel
+    > zu_hell
+    > unscharf
+    > ok
+```
+
+An image marked as `interessant` is classified as:
+
+```text
+mangelhaft_aber_interessant
+```
+
+It is not passed to the normal face-based classification because it has already been explicitly selected for retention.
+
+## Output structure
+
+```text
+output/
+├── technisch/
+│   ├── zu_dunkel/
+│   ├── zu_hell/
+│   ├── unscharf/
+│   └── mangelhaft_aber_interessant/
+├── ok/
+│   ├── gesicht_scharf/
+│   └── kein_gesicht_oder_gesicht_unscharf/
+└── actual-report.csv
+```
+
+## Learn mode
+
+Start learning in the current directory:
+
+```bash
+foto_culler learn --workers 8
+```
+
+By default, the tool evaluates up to 100 randomly selected images. If fewer than 100 supported images exist, all images are evaluated.
+
+Learning data is stored in:
+
+```text
+.foto-culler-learn/
 ├── labels.json
+├── sample.json
 ├── thresholds.json
 └── learn-report.csv
 ```
 
-`labels.json` is the resume state. It is intentionally not deleted or replaced automatically. Delete it when a completely new review is required.
+The selected learning sample is persistent. A rerun continues with the same sample and skips already rated images.
+
+Increase the sample size:
+
+```bash
+foto_culler learn \
+    --sample-size 250 \
+    --workers 8
+```
+
+The existing sample is retained and additional images are added.
+
+Evaluate all images:
+
+```bash
+foto_culler learn \
+    --sample-size 0 \
+    --workers 8
+```
+
+Create a new random sample:
+
+```bash
+foto_culler learn \
+    --sample-size 100 \
+    --new-sample \
+    --workers 8
+```
+
+Resume an interrupted review:
+
+```bash
+foto_culler learn \
+    --resume \
+    --workers 8
+```
 
 ## Execution mode
 
-```bash
-./foto_culler.py actually-do-it \
-  "$HOME/Fotos/00_original" \
-  "$HOME/Fotos/auswertung" \
-  --thresholds "$HOME/Fotos/learn/thresholds.json" \
-  --workers 8
-```
-
-The program first classifies images technically into `too_dark`, `too_bright`, `blurry`, and `ok`. Face detection is then performed only for technically acceptable images.
-
-The output structure is:
-
-```text
-output/
-├── technical/
-│   ├── too_dark/
-│   ├── too_bright/
-│   └── blurry/
-├── ok/
-│   ├── sharp_face/
-│   └── no_face_or_blurry_face/
-└── actual-report.csv
-```
-
-The execution mode moves files rather than copying them. A backup is strongly recommended. Use `--yes` to suppress the confirmation prompt.
-
-## Threshold override
+Run classification using the learned thresholds:
 
 ```bash
-./foto_culler.py actually-do-it \
-  "$HOME/Fotos/00_original" \
-  "$HOME/Fotos/auswertung" \
-  --dark-below 32 \
-  --bright-above 232 \
-  --blur-below 50 \
-  --workers 8
+foto_culler actually-do-it \
+    --workers 8
 ```
 
-## Face detection
-
-The face detector uses OpenCV YuNet. A photo is placed in `sharp_face` if at least one detected face has a face-region sharpness value at or above `--face-blur-below`. Images without a detected face, or with only blurry detected faces, are placed in `no_face_or_blurry_face`.
-
-Relevant options:
+The program searches for thresholds automatically:
 
 ```text
---face-model PATH
---face-confidence FLOAT
---face-nms-threshold FLOAT
---face-top-k INTEGER
---face-blur-below FLOAT
+./.foto-culler-learn/thresholds.json
+./thresholds.json
 ```
 
-Example:
+A specific threshold file can be supplied:
 
 ```bash
-./foto_culler.py actually-do-it \
-  "$HOME/Fotos/00_original" \
-  "$HOME/Fotos/auswertung" \
-  --thresholds "$HOME/Fotos/learn/thresholds.json" \
-  --face-blur-below 70 \
-  --workers 8
+foto_culler actually-do-it \
+    --thresholds "$HOME/Fotos/learn/thresholds.json" \
+    --workers 8
 ```
 
-## Reports
-
-`learn-report.csv` contains the manual ratings and calculated global metrics.
-
-`actual-report.csv` contains global metrics, face metrics, and final classifications, including:
-
-- source path;
-- image dimensions;
-- brightness;
-- global sharpness;
-- contrast;
-- detected face count;
-- sharp face count;
-- blurry face count;
-- maximum face sharpness;
-- face confidence;
-- final classification.
-
-## Supported formats
+Manual labels are loaded automatically from:
 
 ```text
-.jpg .jpeg .png .tif .tiff .webp .bmp
+<source>/.foto-culler-learn/labels.json
 ```
 
-RAW files are not decoded directly. Export previews first or add a RAW decoder such as `rawpy`.
+A different labels file can be supplied:
 
-## Safety and limitations
+```bash
+foto_culler actually-do-it \
+    --labels "$HOME/Fotos/learn/labels.json" \
+    --workers 8
+```
 
-- Keep a backup of the original collection.
-- Use an output directory outside the source directory.
-- Review `actual-report.csv` before deleting anything.
-- Brightness is a global average and can misclassify backlit or night images.
-- Laplacian variance is an empirical sharpness measure.
-- Face detection can miss small, occluded, profile, or rotated faces.
-- The learn state is collection-specific and is not a general machine-learning model.
+## Output mode
 
-## Attribution
+Symbolic links are the default:
 
-Based on the original project:
+```bash
+foto_culler actually-do-it \
+    --workers 8
+```
 
-**Photo Culler** by **Duy Trinh**
+The original files remain unchanged.
 
-Original repository: `https://github.com/trinni/foto_culler`
+To move the files physically instead:
 
-Modified versions must preserve this attribution and clearly identify
-their changes.
+```bash
+foto_culler actually-do-it \
+    --move \
+    --workers 8
+```
+
+Use `--yes` to skip the confirmation prompt:
+
+```bash
+foto_culler actually-do-it \
+    --move \
+    --yes \
+    --workers 8
+```
+
+Always keep a backup before using `--move`.
+
+## Technical thresholds
+
+The learn mode derives thresholds for:
+
+- brightness below which an image is considered too dark;
+- brightness above which an image is considered too bright;
+- global sharpness below which an image is considered blurry.
+
+The manually selected `interessant` images are excluded from the technical `ok` sample and therefore do not distort the learned thresholds.
+
+## Face classification
+
+Technically acceptable images are analyzed with OpenCV YuNet.
+
+A face is considered sharp when the face-region sharpness is at least the configured `--face-blur-below` value.
+
+The default categories are:
+
+```text
+gesicht_scharf
+kein_gesicht_oder_gesicht_unscharf
+```
+
+Face classification is applied only to images that were not technically rejected and were not manually marked as `interessant`.
+
+## Fullscreen and image orientation
+
+The GUI starts as a normal maximized window. It does not start in fullscreen mode.
+
+Use:
+
+```text
+F11
+```
+
+or:
+
+```text
+F
+```
+
+to toggle fullscreen.
+
+Preview images are passed through Pillow’s EXIF orientation handling before display, so images captured in portrait orientation are rotated according to their metadata.
+
+## Safety
+
+- Keep the original photo collection unchanged until the result has been checked.
+- Symbolic links are the default output mode.
+- Use `--move` only after validating the classification.
+- Review `actual-report.csv`.
+- Use a separate output directory outside the source directory.
+- The tool does not delete source files automatically.
+- Manually marked interesting images are preserved separately from technical failures.
 
 ## License
 
@@ -256,15 +267,10 @@ Permission is granted to:
 - inspect and modify the source code;
 - create and distribute modified versions for civilian purposes.
 
-The following conditions apply:
+The original author and the original project must be clearly credited.
 
-1. The original author and the original project must be clearly credited.
-2. Modified versions must retain this license notice.
-3. Modified versions must clearly state that they have been modified.
-4. The original project URL must be preserved in the attribution.
-5. Military use, military deployment, military research, military training, and use by or for armed forces are prohibited.
-6. Use for weapons development, targeting, combat systems, surveillance or reconnaissance in a military context is prohibited.
+Military use, military deployment, military research, military training, military intelligence, weapons development, targeting, combat systems, surveillance or reconnaissance in a military context are prohibited.
 
-This software is provided “as is”, without warranty of any kind. The author shall not be liable for any claim, damages or other liability arising from the use of this software.
+Modified versions must retain this license notice and clearly state that they have been modified.
 
-By using, modifying, or distributing this software, you agree to the terms of this license.
+The software is provided “as is”, without warranty of any kind.

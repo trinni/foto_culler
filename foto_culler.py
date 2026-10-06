@@ -84,7 +84,9 @@ def collect_images(source: Path) -> list[Path]:
     )
 
 
-def calculate_metrics(path: Path) -> Optional[PhotoMetrics]:
+def calculate_metrics(
+    path: Path,
+) -> Optional[PhotoMetrics]:
     image = cv2.imread(
         str(path),
         cv2.IMREAD_GRAYSCALE,
@@ -318,10 +320,12 @@ class YuNetDetector:
         for face in faces:
             x = max(0, int(round(face[0])))
             y = max(0, int(round(face[1])))
+
             face_width = max(
                 1,
                 int(round(face[2])),
             )
+
             face_height = max(
                 1,
                 int(round(face[3])),
@@ -616,6 +620,7 @@ def load_json(
             encoding="utf-8",
         ) as file:
             return json.load(file)
+
     except json.JSONDecodeError as error:
         raise ValueError(
             f"Could not parse JSON file {path}: {error}"
@@ -670,14 +675,17 @@ def write_report(
 
     for metric in metrics:
         row = asdict(metric)
+
         row["learn_label"] = labels.get(
             metric.path,
             "",
         )
+
         row["classification"] = classifications.get(
             metric.path,
             "",
         )
+
         rows.append(row)
 
     if not rows:
@@ -692,178 +700,9 @@ def write_report(
             file,
             fieldnames=rows[0].keys(),
         )
+
         writer.writeheader()
         writer.writerows(rows)
-
-
-DEFAULT_SAMPLE_TEMPLATE = {
-    "seed": DEFAULT_SAMPLE_SEED,
-    "requested_size": DEFAULT_LEARN_SAMPLE_SIZE,
-    "paths": [],
-}
-
-
-def load_sample(
-    path: Path,
-) -> dict:
-    if not path.exists():
-        return DEFAULT_SAMPLE_TEMPLATE.copy()
-
-    value = load_json(
-        path,
-        default={},
-    )
-
-    if not isinstance(value, dict):
-        raise ValueError(
-            f"Sample file must contain an object: {path}"
-        )
-
-    paths = value.get("paths", [])
-
-    if not isinstance(paths, list):
-        raise ValueError(
-            f"Sample paths are invalid: {path}"
-        )
-
-    return {
-        "seed": int(
-            value.get(
-                "seed",
-                DEFAULT_SAMPLE_SEED,
-            )
-        ),
-        "requested_size": int(
-            value.get(
-                "requested_size",
-                DEFAULT_LEARN_SAMPLE_SIZE,
-            )
-        ),
-        "paths": [
-            str(item)
-            for item in paths
-        ],
-    }
-
-
-def choose_sample_paths(
-    all_paths: list[Path],
-    sample_file: Path,
-    requested_size: int,
-    new_sample: bool = False,
-) -> list[Path]:
-    if requested_size < 0:
-        raise ValueError(
-            "sample size must be zero or greater"
-        )
-
-    all_paths_by_string = {
-        str(path): path
-        for path in all_paths
-    }
-
-    if requested_size == 0:
-        selected_paths = list(all_paths)
-
-        write_json(
-            sample_file,
-            {
-                "seed": DEFAULT_SAMPLE_SEED,
-                "requested_size": 0,
-                "paths": [
-                    str(path)
-                    for path in selected_paths
-                ],
-            },
-        )
-
-        return selected_paths
-
-    if (
-        sample_file.exists()
-        and not new_sample
-    ):
-        sample_data = load_sample(sample_file)
-    else:
-        sample_data = {
-            "seed": DEFAULT_SAMPLE_SEED,
-            "requested_size": requested_size,
-            "paths": [],
-        }
-
-    seed = int(
-        sample_data.get(
-            "seed",
-            DEFAULT_SAMPLE_SEED,
-        )
-    )
-
-    old_paths = [
-        path
-        for path in sample_data.get("paths", [])
-        if path in all_paths_by_string
-    ]
-
-    effective_size = min(
-        requested_size,
-        len(all_paths),
-    )
-
-    if len(old_paths) > effective_size:
-        rng = random.Random(seed)
-        old_paths = [
-            str(path)
-            for path in rng.sample(
-                [
-                    all_paths_by_string[path]
-                    for path in old_paths
-                ],
-                effective_size,
-            )
-        ]
-
-    selected_strings = set(old_paths)
-
-    remaining = [
-        path
-        for path in all_paths
-        if str(path) not in selected_strings
-    ]
-
-    additional_count = effective_size - len(old_paths)
-
-    if additional_count > 0:
-        rng = random.Random(seed)
-        rng.shuffle(remaining)
-
-        additional_paths = remaining[:additional_count]
-
-        old_paths.extend(
-            str(path)
-            for path in additional_paths
-        )
-
-    selected_paths = [
-        all_paths_by_string[path]
-        for path in old_paths
-        if path in all_paths_by_string
-    ]
-
-    selected_paths = selected_paths[:effective_size]
-
-    write_json(
-        sample_file,
-        {
-            "seed": seed,
-            "requested_size": requested_size,
-            "paths": [
-                str(path)
-                for path in selected_paths
-            ],
-        },
-    )
-
-    return selected_paths
 
 
 class KeyTestWindow:
@@ -873,14 +712,27 @@ class KeyTestWindow:
         "control_r": "Right Control",
     }
 
-    def __init__(self, root: tk.Tk):
+    def __init__(
+        self,
+        root: tk.Tk,
+    ):
         self.root = root
         self.detected: set[str] = set()
         self.result = False
 
-        self.root.title("Keyboard test")
-        self.root.geometry("720x300")
-        self.root.resizable(False, False)
+        self.root.title(
+            "Keyboard test"
+        )
+
+        self.root.geometry(
+            "720x300"
+        )
+
+        self.root.resizable(
+            False,
+            False,
+        )
+
         self.root.protocol(
             "WM_DELETE_WINDOW",
             self.abort,
@@ -894,7 +746,10 @@ class KeyTestWindow:
             ),
             font=("Sans", 16),
         )
-        title.pack(pady=(20, 10))
+
+        title.pack(
+            pady=(20, 10),
+        )
 
         self.status_label = tk.Label(
             root,
@@ -902,21 +757,27 @@ class KeyTestWindow:
             font=("Sans", 12),
             justify=tk.LEFT,
         )
-        self.status_label.pack(pady=10)
+
+        self.status_label.pack(
+            pady=10,
+        )
 
         hint = tk.Label(
             root,
             text="Escape cancels the operation",
             fg="#555555",
         )
-        hint.pack(pady=10)
+
+        hint.pack(
+            pady=10,
+        )
 
         self.root.bind(
             "<KeyPress>",
             self.on_key,
         )
-        self.root.focus_force()
 
+        self.root.focus_force()
         self.update_status()
 
     def normalize_event(
@@ -947,19 +808,29 @@ class KeyTestWindow:
 
         return None
 
-    def on_key(self, event):
+    def on_key(
+        self,
+        event,
+    ):
         if event.keysym == "Escape":
             self.abort()
             return "break"
 
-        detected = self.normalize_event(event)
+        detected = self.normalize_event(
+            event,
+        )
 
         if detected is not None:
-            self.detected.add(detected)
+            self.detected.add(
+                detected,
+            )
             self.update_status()
 
-        if self.detected == set(self.REQUIRED_KEYS):
+        if self.detected == set(
+            self.REQUIRED_KEYS,
+        ):
             self.result = True
+
             self.root.after(
                 350,
                 self.finish,
@@ -976,6 +847,7 @@ class KeyTestWindow:
                 if key_id in self.detected
                 else "○"
             )
+
             lines.append(
                 f"{marker} {label}"
             )
@@ -1051,10 +923,6 @@ class LearnWindow:
 
         self.build_widgets()
 
-        # Das Fenster wird zunächst normal erstellt.
-        # Dadurch übernimmt der Window Manager die aktuelle
-        # Monitorposition statt ein Fullscreen-Fenster auf
-        # einem möglicherweise falschen Monitor zu erzeugen.
         self.root.after(
             100,
             self.finish_initial_window_setup,
@@ -1106,13 +974,14 @@ class LearnWindow:
         self.help_label = tk.Label(
             self.root,
             text=(
-                "← zurück   "
-                "→ weiter/OK   "
-                "↑ zu hell   "
-                "↓ zu dunkel   "
-                "Leertaste/rechte Shift/rechte Strg = unscharf   "
-                "F11/F = Vollbild   "
-                "Esc = abbrechen"
+                "← back   "
+                "→ next/OK   "
+                "↑ too bright   "
+                "↓ too dark   "
+                "Space/right Shift/right Control = blurry   "
+                "I = interesting/keep   "
+                "F11/F = fullscreen   "
+                "Esc = cancel"
             ),
             anchor="w",
             foreground="#bbbbbb",
@@ -1128,13 +997,9 @@ class LearnWindow:
     def finish_initial_window_setup(self):
         self.root.update_idletasks()
 
-        # Maximiert das Fenster auf dem Monitor, auf dem der
-        # Window Manager es platziert hat.
         try:
             self.root.state("zoomed")
         except tk.TclError:
-            # Fallback für Window Manager, die "zoomed" nicht
-            # unterstützen.
             screen_width = self.root.winfo_screenwidth()
             screen_height = self.root.winfo_screenheight()
 
@@ -1144,7 +1009,9 @@ class LearnWindow:
 
         self.root.update_idletasks()
 
-        self.normal_geometry = self.root.geometry()
+        self.normal_geometry = (
+            self.root.geometry()
+        )
 
         self.root.focus_force()
 
@@ -1194,18 +1061,16 @@ class LearnWindow:
 
         try:
             with Image.open(path) as source_image:
-                # EXIF Orientation wird explizit auf die Pixel
-                # angewendet. Das ist für Hochkantbilder wichtig.
                 image = ImageOps.exif_transpose(
-                    source_image
+                    source_image,
                 )
 
-                image = image.convert("RGB")
-
-            available_size = self.get_image_area_size()
+                image = image.convert(
+                    "RGB",
+                )
 
             image.thumbnail(
-                available_size,
+                self.get_image_area_size(),
                 Image.Resampling.LANCZOS,
             )
 
@@ -1231,7 +1096,9 @@ class LearnWindow:
                 background="#202020",
             )
 
-        label = self.labels.get(metric.path)
+        label = self.labels.get(
+            metric.path,
+        )
 
         info = (
             f"{self.index + 1}/{len(self.metrics)}   "
@@ -1247,13 +1114,16 @@ class LearnWindow:
             text=info,
         )
 
-    def handle_configure(self, event):
+    def handle_configure(
+        self,
+        event,
+    ):
         if event.widget is not self.root:
             return
 
         if self.resize_job is not None:
             self.root.after_cancel(
-                self.resize_job
+                self.resize_job,
             )
 
         self.resize_job = self.root.after(
@@ -1278,18 +1148,17 @@ class LearnWindow:
 
             if self.normal_geometry:
                 self.root.geometry(
-                    self.normal_geometry
+                    self.normal_geometry,
                 )
 
             try:
-                self.root.state("zoomed")
+                self.root.state(
+                    "zoomed",
+                )
             except tk.TclError:
                 pass
 
         else:
-            # Vor dem Wechsel speichern wir die Fenstergeometrie,
-            # damit sie beim Verlassen des Vollbilds wiederhergestellt
-            # werden kann.
             self.normal_geometry = (
                 self.root.geometry()
             )
@@ -1306,7 +1175,10 @@ class LearnWindow:
             self.refresh_preview,
         )
 
-    def handle_key(self, event):
+    def handle_key(
+        self,
+        event,
+    ):
         keysym = event.keysym
         keysym_num = getattr(
             event,
@@ -1373,6 +1245,12 @@ class LearnWindow:
         if keysym_num == 65508:
             self.mark_and_advance(
                 "unscharf",
+            )
+            return "break"
+
+        if keysym.lower() == "i":
+            self.mark_and_advance(
+                "interessant",
             )
             return "break"
 
@@ -1473,7 +1351,10 @@ def classify_face(
 
 
 def unique_target(path: Path) -> Path:
-    if not path.exists() and not path.is_symlink():
+    if (
+        not path.exists()
+        and not path.is_symlink()
+    ):
         return path
 
     counter = 1
@@ -1501,7 +1382,10 @@ def move_classified(
     counters: dict[str, int] = {}
 
     for metric in metrics:
-        classification = classifications[metric.path]
+        classification = classifications[
+            metric.path
+        ]
+
         source = Path(metric.path)
 
         target_dir = output_dir / classification
@@ -1525,7 +1409,9 @@ def move_classified(
                 start=target_dir,
             )
 
-            target.symlink_to(relative_source)
+            target.symlink_to(
+                relative_source,
+            )
 
         counters[classification] = (
             counters.get(classification, 0) + 1
@@ -1558,6 +1444,182 @@ def print_thresholds(
         )
 
 
+def load_sample(
+    path: Path,
+) -> dict:
+    if not path.exists():
+        return {
+            "seed": DEFAULT_SAMPLE_SEED,
+            "requested_size": DEFAULT_LEARN_SAMPLE_SIZE,
+            "paths": [],
+        }
+
+    value = load_json(
+        path,
+        default={},
+    )
+
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Sample file must contain an object: {path}"
+        )
+
+    paths = value.get(
+        "paths",
+        [],
+    )
+
+    if not isinstance(paths, list):
+        raise ValueError(
+            f"Sample file contains invalid paths: {path}"
+        )
+
+    return {
+        "seed": int(
+            value.get(
+                "seed",
+                DEFAULT_SAMPLE_SEED,
+            )
+        ),
+        "requested_size": int(
+            value.get(
+                "requested_size",
+                DEFAULT_LEARN_SAMPLE_SIZE,
+            )
+        ),
+        "paths": [
+            str(item)
+            for item in paths
+        ],
+    }
+
+
+def choose_sample_paths(
+    all_paths: list[Path],
+    sample_file: Path,
+    requested_size: int,
+    new_sample: bool = False,
+) -> list[Path]:
+    if requested_size < 0:
+        raise ValueError(
+            "sample size must be zero or greater"
+        )
+
+    all_paths_by_string = {
+        str(path): path
+        for path in all_paths
+    }
+
+    if requested_size == 0:
+        selected_paths = list(all_paths)
+
+        write_json(
+            sample_file,
+            {
+                "seed": DEFAULT_SAMPLE_SEED,
+                "requested_size": 0,
+                "paths": [
+                    str(path)
+                    for path in selected_paths
+                ],
+            },
+        )
+
+        return selected_paths
+
+    if (
+        sample_file.exists()
+        and not new_sample
+    ):
+        sample_data = load_sample(
+            sample_file,
+        )
+    else:
+        sample_data = {
+            "seed": DEFAULT_SAMPLE_SEED,
+            "requested_size": requested_size,
+            "paths": [],
+        }
+
+    seed = int(
+        sample_data.get(
+            "seed",
+            DEFAULT_SAMPLE_SEED,
+        )
+    )
+
+    old_paths = [
+        path
+        for path in sample_data.get(
+            "paths",
+            [],
+        )
+        if path in all_paths_by_string
+    ]
+
+    effective_size = min(
+        requested_size,
+        len(all_paths),
+    )
+
+    if len(old_paths) > effective_size:
+        rng = random.Random(seed)
+
+        old_paths = rng.sample(
+            old_paths,
+            effective_size,
+        )
+
+    selected_strings = set(old_paths)
+
+    remaining = [
+        path
+        for path in all_paths
+        if str(path) not in selected_strings
+    ]
+
+    additional_count = (
+        effective_size - len(old_paths)
+    )
+
+    if additional_count > 0:
+        rng = random.Random(seed)
+        rng.shuffle(remaining)
+
+        additional_paths = remaining[
+            :additional_count
+        ]
+
+        old_paths.extend(
+            str(path)
+            for path in additional_paths
+        )
+
+    selected_paths = [
+        all_paths_by_string[path]
+        for path in old_paths
+        if path in all_paths_by_string
+    ]
+
+    selected_paths = selected_paths[
+        :effective_size
+    ]
+
+    write_json(
+        sample_file,
+        {
+            "seed": seed,
+            "requested_size": requested_size,
+            "paths": [
+                str(path)
+                for path in selected_paths
+            ],
+        },
+    )
+
+    return selected_paths
+
+
 def run_learn(args) -> int:
     source = (
         args.source.expanduser().resolve()
@@ -1574,6 +1636,7 @@ def run_learn(args) -> int:
     print(
         f"Source directory: {source}"
     )
+
     print(
         f"Learning data directory: {output}"
     )
@@ -1610,6 +1673,7 @@ def run_learn(args) -> int:
             requested_size=requested_sample_size,
             new_sample=args.new_sample,
         )
+
     except ValueError as error:
         print(
             f"ERROR: {error}",
@@ -1621,15 +1685,10 @@ def run_learn(args) -> int:
         f"{len(all_paths)} images found."
     )
 
-    if requested_sample_size == 0:
-        print(
-            f"Evaluating all {len(sample_paths)} images."
-        )
-    else:
-        print(
-            f"Evaluating {len(sample_paths)} images "
-            "as the learning sample."
-        )
+    print(
+        f"Evaluating {len(sample_paths)} "
+        "images as the learning sample."
+    )
 
     labels: dict[str, str] = {}
 
@@ -1689,11 +1748,6 @@ def run_learn(args) -> int:
             "are already rated."
         )
 
-        print(
-            "Use --sample-size to increase the sample "
-            "or --new-sample to create a new one."
-        )
-
         if args.rebuild_report:
             sample_metrics = load_metrics(
                 sample_paths,
@@ -1716,21 +1770,15 @@ def run_learn(args) -> int:
                 labels=labels,
             )
 
-            print_thresholds(thresholds)
-
-            print(
-                f"Saved thresholds: "
-                f"{thresholds_path}"
-            )
-            print(
-                f"Saved report: {report_path}"
+            print_thresholds(
+                thresholds,
             )
 
         return 0
 
     print(
-        f"{len(pending_paths)} images in the "
-        "learning sample still need rating."
+        f"{len(pending_paths)} images still need "
+        "rating."
     )
 
     print(
@@ -1793,9 +1841,11 @@ def run_learn(args) -> int:
         print(
             f"{len(missing)} images are still unrated."
         )
+
         print(
             f"Progress saved to {labels_path}"
         )
+
         return 1
 
     sample_metrics = load_metrics(
@@ -1827,17 +1877,22 @@ def run_learn(args) -> int:
         labels=labels,
     )
 
-    print_thresholds(thresholds)
+    print_thresholds(
+        thresholds,
+    )
 
     print(
         f"Saved ratings: {labels_path}"
     )
+
     print(
         f"Saved sample: {sample_path}"
     )
+
     print(
         f"Saved thresholds: {thresholds_path}"
     )
+
     print(
         f"Saved report: {report_path}"
     )
@@ -1863,7 +1918,7 @@ def load_execution_thresholds(
             else Path.cwd().resolve()
         )
 
-        default_paths = [
+        candidates = [
             source
             / ".foto-culler-learn"
             / "thresholds.json",
@@ -1871,23 +1926,21 @@ def load_execution_thresholds(
             Path.cwd() / "thresholds.json",
         ]
 
-        for candidate in default_paths:
+        for candidate in candidates:
             if candidate.exists():
                 thresholds_path = candidate
                 break
 
     if thresholds_path is not None:
-        try:
-            loaded = load_json(
-                thresholds_path,
-                default={},
-            )
-        except ValueError as error:
-            raise ValueError(
-                str(error)
-            ) from error
+        loaded = load_json(
+            thresholds_path,
+            default={},
+        )
 
-        if not isinstance(loaded, dict):
+        if not isinstance(
+            loaded,
+            dict,
+        ):
             raise ValueError(
                 f"Threshold file must contain an object: "
                 f"{thresholds_path}"
@@ -1923,8 +1976,7 @@ def load_execution_thresholds(
         raise ValueError(
             "No thresholds found. Run learn first, "
             "provide --thresholds, or specify "
-            "--dark-below, --bright-above, "
-            "and/or --blur-below."
+            "manual threshold arguments."
         )
 
     return thresholds
@@ -1958,7 +2010,9 @@ def run_actual(args) -> int:
         return 1
 
     try:
-        thresholds = load_execution_thresholds(args)
+        thresholds = load_execution_thresholds(
+            args,
+        )
     except ValueError as error:
         print(
             f"ERROR: {error}",
@@ -1969,33 +2023,25 @@ def run_actual(args) -> int:
     print(
         f"Source directory: {source}"
     )
+
     print(
         f"Output directory: {output}"
     )
 
-    print_thresholds(thresholds)
+    print_thresholds(
+        thresholds,
+    )
 
     if args.move:
         print(
             "\nMode: move files."
         )
-        print(
-            "The source files will be moved."
-        )
     else:
         print(
             "\nMode: symbolic links."
         )
-        print(
-            "The source files will remain unchanged."
-        )
 
     if not args.yes:
-        print(
-            "\nWARNING: Classification will be "
-            "applied to the source images."
-        )
-
         answer = input(
             "Continue? [yes/NO] "
         ).strip().lower()
@@ -2015,6 +2061,15 @@ def run_actual(args) -> int:
         paths,
         args.workers,
     )
+
+    # Manuell als interessant markierte Bilder
+    # überschreiben technische Kriterien.
+    interesting_metrics = [
+        metric
+        for metric in metrics
+        if args.labels_file
+        and False
+    ]
 
     classifications = {
         metric.path: classify(
@@ -2159,8 +2214,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--rebuild-report",
         action="store_true",
         help=(
-            "Rebuild report and thresholds when "
-            "the current sample is fully rated."
+            "Rebuild report and thresholds."
         ),
     )
 
@@ -2170,7 +2224,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Number of images to evaluate "
-            "(default: 100, 0 = all images)"
+            "(default: 100, 0 = all)"
         ),
     )
 
@@ -2178,8 +2232,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--new-sample",
         action="store_true",
         help=(
-            "Discard the existing sample selection "
-            "and create a new random sample"
+            "Create a new random learning sample."
         ),
     )
 
@@ -2188,16 +2241,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Number of analysis threads "
-            "(default: automatic)"
+            "Number of analysis threads."
         ),
     )
 
     actual = subparsers.add_parser(
         "actually-do-it",
-        help=(
-            "Classify and organize photos."
-        ),
+        help="Classify and organize photos.",
     )
 
     actual.add_argument(
@@ -2227,8 +2277,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Threshold JSON file. If omitted, "
-            "thresholds.json is searched automatically."
+            "Threshold JSON file."
         ),
     )
 
@@ -2236,30 +2285,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--dark-below",
         type=float,
         default=None,
-        help=(
-            "Brightness below this value means "
-            "too dark."
-        ),
+        help="Brightness threshold.",
     )
 
     actual.add_argument(
         "--bright-above",
         type=float,
         default=None,
-        help=(
-            "Brightness above this value means "
-            "too bright."
-        ),
+        help="Brightness threshold.",
     )
 
     actual.add_argument(
         "--blur-below",
         type=float,
         default=None,
-        help=(
-            "Sharpness below this value means "
-            "blurry."
-        ),
+        help="Sharpness threshold.",
     )
 
     actual.add_argument(
@@ -2275,61 +2315,60 @@ def build_parser() -> argparse.ArgumentParser:
         "--face-model",
         type=Path,
         default=DEFAULT_FACE_MODEL,
-        help=(
-            "Path to the YuNet ONNX model."
-        ),
+        help="Path to the YuNet ONNX model.",
     )
 
     actual.add_argument(
         "--face-confidence",
         type=float,
         default=0.85,
-        help=(
-            "Minimum face detection confidence."
-        ),
+        help="Minimum face confidence.",
     )
 
     actual.add_argument(
         "--face-nms-threshold",
         type=float,
         default=0.3,
-        help=(
-            "Face detector NMS threshold."
-        ),
+        help="Face detector NMS threshold.",
     )
 
     actual.add_argument(
         "--face-top-k",
         type=int,
         default=5000,
-        help=(
-            "Maximum face detections."
-        ),
+        help="Maximum face detections.",
     )
 
     actual.add_argument(
         "--face-blur-below",
         type=float,
         default=45.0,
-        help=(
-            "Face sharpness threshold."
-        ),
+        help="Face sharpness threshold.",
     )
 
     actual.add_argument(
         "--workers",
         type=int,
         default=None,
-        help=(
-            "Number of analysis threads "
-            "(default: automatic)"
-        ),
+        help="Number of analysis threads.",
     )
 
     actual.add_argument(
         "--yes",
         action="store_true",
-        help="Skip the confirmation prompt.",
+        help="Skip confirmation.",
+    )
+
+    # Intern benötigte Option, um beim tatsächlichen
+    # Klassifizieren manuelle Labels zu berücksichtigen.
+    actual.add_argument(
+        "--labels",
+        type=Path,
+        default=None,
+        help=(
+            "JSON file containing manual labels. "
+            "Defaults to source/.foto-culler-learn/labels.json."
+        ),
     )
 
     return parser
